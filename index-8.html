@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
+<title>企业税票贷｜独立审核管理后台</title>
+<style>
+:root{--blue:#205dc2;--dark:#153e80;--ink:#1a3155;--muted:#657894;--line:#dbe5f2;--bg:#f3f7fc}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif}
+header{background:#fff;border-bottom:1px solid var(--line)}.top{max-width:1100px;padding:14px 18px;margin:auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}.logo{font-size:20px;color:var(--dark);font-weight:800}.sub{font-size:12px;color:var(--muted)}main{max-width:1100px;margin:24px auto 50px;padding:0 16px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;margin-bottom:18px;box-shadow:0 5px 22px #192f580a}.card h2{margin:0 0 12px;font-size:21px}.card h3{font-size:17px;margin:16px 0 8px}.muted{color:var(--muted);font-size:13px}.muted p{margin:5px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin:8px 0}.field label{display:block;font-weight:650;margin-bottom:4px}
+input,select,textarea{width:100%;padding:12px;border:1px solid #bacde7;border-radius:9px;font:inherit;background:#fff;color:var(--ink)}textarea{min-height:80px;resize:vertical}button{border:0;border-radius:9px;padding:11px 17px;background:var(--blue);color:#fff;font:inherit;font-weight:650;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}button.secondary{background:#edf3fc;color:var(--dark)}button:hover:not(:disabled){filter:brightness(.97)}.flex{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.record{padding:14px 0;border-bottom:1px solid var(--line)}.record:last-child{border:0}.record p{margin:5px 0}.tag{display:inline-block;background:#e9f1ff;color:#1956ae;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:bold}.warning{background:#fff9ed;border:1px solid #ecdba9;color:#72571a;border-radius:9px;padding:10px 13px;margin:12px 0}.good{background:#eff9f4;color:#226b4e;border:1px solid #c7e4d2;border-radius:9px;padding:10px 13px}.notice{padding:12px;border-radius:10px;background:#edf4ff;color:#1a4f9d}.alert{position:fixed;bottom:16px;left:5%;right:5%;max-width:620px;margin:auto;padding:13px 16px;background:#183d7a;color:white;border-radius:12px;box-shadow:0 8px 27px #20365760;display:none;z-index:10}.center{max-width:550px;margin:48px auto}footer{text-align:center;color:var(--muted);padding:22px 10px;font-size:12px}
+[hidden]{display:none!important}a{color:var(--blue)}@media(max-width:650px){.grid{grid-template-columns:1fr}.card{padding:18px}.top{padding:12px}.center{margin:26px auto}}
+</style>
+</head>
+<body>
+<header><div class="top"><div><div class="logo">企业税票贷 · 管理后台</div><div class="sub">独立管理员登录 · 与客户网站共享同一数据库</div></div><div class="flex"><span id="signed-name" class="muted"></span><button id="signout" class="secondary" type="button" hidden>退出后台</button></div></div></header>
+<main>
+<section id="login-view" class="center"><div class="card"><h2>管理员专属登录</h2><p class="muted">仅数据库授权的唯一管理员账号能够查看客户申请和审核资料。客户账号无法访问。</p>
+<form id="login-form"><div class="field"><label for="email">管理员邮箱</label><input id="email" type="email" required autocomplete="username"></div><div class="field"><label for="password">登录密码</label><input id="password" type="password" required autocomplete="current-password"></div><button id="login-button" type="submit">登录管理后台</button></form>
+<p class="muted">本后台不开放公开注册。忘记密码时使用原管理员账号的密码恢复流程。</p><p id="login-help" class="muted" role="status" hidden></p><button id="retry-session" type="button" class="secondary" hidden>重试管理员身份验证（无需重新登录）</button></div></section>
+<section id="dashboard" hidden><div class="card"><div class="flex" style="justify-content:space-between"><div><h2>客户融资申请</h2><p class="muted">由客户网站自动传入，无需导入。列表只显示脱敏个人信息。</p></div><button type="button" id="refresh">刷新申请列表</button></div><div id="counter" class="notice">正在加载客户申请…</div><div id="applications" aria-live="polite"></div></div>
+<div class="card" id="review-card" hidden><h2>审核客户申请</h2><p class="muted" id="application-id"></p><div class="grid"><div class="field"><label for="review-status">审核结果</label><select id="review-status"><option value="reviewing">审核中</option><option value="supplement_required">需要补充材料</option><option value="rejected">审核不通过</option><option value="approved">人工审核通过</option></select></div><div class="field"><label for="review-note">审核备注</label><textarea id="review-note" maxlength="1000" placeholder="拒绝或补件时请说明原因；修改审批条件时请注明原因"></textarea></div></div>
+<div id="approved-fields" hidden><h3>审批贷款条件</h3><div class="grid"><div class="field"><label for="offer-amount">审批额度（元）</label><input id="offer-amount" type="number" step="0.01" min="0.01" max="100000000"></div><div class="field"><label for="offer-rate">年化利率（%）</label><input id="offer-rate" type="number" step="0.0001" min="0" max="36"></div><div class="field"><label for="offer-months">还款期数（月）</label><input id="offer-months" type="number" step="1" min="1" max="360"></div><div class="field"><label for="offer-method">还款方式</label><select id="offer-method"><option value="">请选择</option><option value="equal_installments">等额本息</option><option value="interest_only_balloon">先息后本</option></select></div></div><p class="muted">审批额度、利率、期数和方式只能由管理员设置；真实利率须满足适用法律及合同约定。</p></div>
+<div class="flex"><button id="save-review" type="button">保存审核结果并发送站内消息</button><button id="cancel-review" class="secondary" type="button">关闭</button></div>
+<h3>授权查看客户上传的材料</h3><p class="muted">每次查看由后端验证权限，文件链接有效期60秒，访问动作记录日志。</p><div class="flex"><button type="button" class="secondary" data-document="id-front">身份证正面</button><button type="button" class="secondary" data-document="id-back">身份证反面</button><button type="button" class="secondary" data-document="business-license">营业执照</button></div></div></section>
+</main><footer>企业税票贷管理端 · 非公众申请入口 · 请妥善保管管理员登录凭证</footer><div id="toast" class="alert" role="status" aria-live="polite"></div>
+<script type="module">
+import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
+const BASE='https://verzesghsasjhpbozmgw.supabase.co';
+const PUBLIC_KEY='sb_publishable_mEsqewvVT_kVKzdFaXyEwA_M17G4Dyy';
+// Separate login session from the customer site, even on the same hosting origin.
+const sb=createClient(BASE,PUBLIC_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'qiye-admin-private-session-v1'}});
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const labels={pending:'待审核',reviewing:'审核中',approved:'审核通过',rejected:'审核不通过',supplement_required:'待补充材料'};
+let permitted=false,chosen=null,applications=[],messageTimer,verifyingAdmin=false;
+function authErrorMessage(error){
+ const code=String(error?.code||''),status=Number(error?.status||0);
+ if(code==='invalid_credentials')return '邮箱或密码不正确，请核对后重试。';
+ if(code==='email_not_confirmed')return '管理员邮箱尚未完成验证，请先完成邮箱验证。';
+ if(status===429||code.includes('rate_limit'))return '登录请求过于频繁，Supabase暂时限制登录，请稍后再试；无需反复点击。';
+ if(code==='refresh_token_not_found'||code==='refresh_token_already_used')return '登录会话已失效，请重新输入管理员邮箱和密码。';
+ return error?.message||'请检查网络连接后重试。';
+}
+function retryVisibility(show,message=''){
+ $('retry-session').hidden=!show;
+ $('login-help').hidden=!message;
+ $('login-help').textContent=message;
+}
+function toast(message){const el=$('toast');el.textContent=message;el.style.display='block';clearTimeout(messageTimer);messageTimer=setTimeout(()=>el.style.display='none',6000)}
+function authView(ok){permitted=ok;$('login-view').hidden=ok;$('dashboard').hidden=!ok;$('signout').hidden=!ok;if(ok)retryVisibility(false);if(!ok){$('review-card').hidden=true;$('signed-name').textContent='';chosen=null;applications=[]}}
+async function api(path,method='GET',body){
+ const {data:{session}}=await sb.auth.getSession();if(!session)throw Error('请先登录管理员账号');
+ const response=await fetch(BASE+'/functions/v1/qiye-api'+path,{method,headers:{Authorization:'Bearer '+session.access_token,apikey:PUBLIC_KEY,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});
+ const data=await response.json().catch(()=>({error:'服务器响应异常'}));
+ if(!response.ok)throw Error(data.error||'网络请求失败');return data;
+}
+async function enterAdmin(){
+ if(verifyingAdmin)return false;
+ verifyingAdmin=true;
+ try{
+  const {data:{session},error:sessionError}=await sb.auth.getSession();
+  if(sessionError)throw sessionError;
+  if(!session){authView(false);retryVisibility(false);return false}
+  const me=await api('/me');
+  if(me.staff_role!=='admin'){
+    const {error:signOutError}=await sb.auth.signOut({scope:'local'});
+    authView(false);retryVisibility(false);
+    toast(signOutError?'该账号无后台管理权限，请先退出当前会话':'该账号没有后台管理权限');
+    return false;
+  }
+  authView(true);$('signed-name').textContent='管理员：'+(me.email||'已登录');
+  await loadApplications();
+  return true;
+ }catch(err){
+  authView(false);
+  // Temporary network/API errors do not invalidate a valid administrator session.
+  const code=String(err?.code||'');
+  const hasExpired=code==='refresh_token_not_found'||code==='refresh_token_already_used';
+  retryVisibility(!hasExpired,hasExpired?'登录会话已失效，请重新使用管理员邮箱和密码登录。':'已有登录会话，暂时无法完成管理员验证。请检查网络后点下方重试，不要重复输入密码。');
+  toast('管理员校验未完成：'+authErrorMessage(err));
+  return false;
+ }finally{verifyingAdmin=false}
+}
+$('retry-session').addEventListener('click',async()=>{
+ const btn=$('retry-session');btn.disabled=true;
+ try{const ok=await enterAdmin();if(ok){$('password').value='';toast('管理员身份验证成功')}}finally{btn.disabled=false}
+});
+$('login-form').addEventListener('submit',async ev=>{
+ ev.preventDefault();
+ const btn=$('login-button');if(btn.disabled||verifyingAdmin)return;btn.disabled=true;
+ try{
+  retryVisibility(false);
+  const email=$('email').value.trim();
+  // If a session is already present, verify it instead of repeatedly submitting passwords.
+  const {data:{session},error:sessionError}=await sb.auth.getSession();
+  if(sessionError)throw sessionError;
+  if(session&&session.user?.email?.toLowerCase()===email.toLowerCase()){
+    const ok=await enterAdmin();
+    if(ok){$('password').value='';toast('已进入独立审核管理后台')}
+    return;
+  }
+  const {error}=await sb.auth.signInWithPassword({email,password:$('password').value});
+  if(error)throw error;
+  const ok=await enterAdmin();
+  if(ok){$('password').value='';toast('已进入独立审核管理后台')}
+ }catch(err){toast('登录未完成：'+authErrorMessage(err))}
+ finally{btn.disabled=false}
+});
+$('signout').addEventListener('click',async()=>{
+ const btn=$('signout');if(btn.disabled)return;btn.disabled=true;
+ try{
+  // Only close the administrator session on this device; avoid disrupting other sessions.
+  const {error}=await sb.auth.signOut({scope:'local'});
+  if(error)throw error;
+  authView(false);retryVisibility(false);
+  $('password').value='';
+  toast('已安全退出，随时可以重新登录管理员后台');
+ }catch(err){toast('退出未完成：'+authErrorMessage(err)+' 请稍后重试。')}
+ finally{btn.disabled=false}
+});
+async function loadApplications(){
+ if(!permitted)return;
+ const list=$('applications');$('counter').textContent='正在刷新客户申请…';
+ try{
+  const result=await api('/staff/applications');applications=result.applications||[];
+  const counts=applications.reduce((o,a)=>(o[a.status]=(o[a.status]||0)+1,o),{});
+  $('counter').textContent='共 '+applications.length+' 条申请 · 待审核 '+(counts.pending||0)+' · 审核中 '+(counts.reviewing||0)+' · 已通过 '+(counts.approved||0);
+  list.innerHTML=applications.length?applications.map((a,i)=>{
+    return '<article class="record"><div class="flex"><strong>'+esc(a.company_name)+'</strong><span class="tag">'+esc(labels[a.status]||a.status)+'</span></div>'+
+    '<p>申请人：'+esc(a.applicant_name)+'　电话：'+esc(a.mobile)+'</p>'+
+    '<p class="muted">申请编号：'+esc(a.id)+'　提交时间：'+esc(a.created_at?new Date(a.created_at).toLocaleString('zh-CN'):'未知')+'</p>'+
+    '<button class="secondary" type="button" data-idx="'+i+'">查看并审核</button></article>';
+  }).join(''):'暂无客户申请。客户从前台提交后，会自动出现在这里。';
+ }catch(err){$('counter').textContent='读取失败';list.textContent='';toast('读取申请失败：'+err.message)}
+}
+$('refresh').addEventListener('click',loadApplications);
+$('applications').addEventListener('click',async ev=>{
+ const btn=ev.target.closest('button[data-idx]');if(!btn||!permitted)return;
+ const item=applications[Number(btn.dataset.idx)];if(!item)return;
+ chosen=item.id;$('review-card').hidden=false;$('application-id').textContent='申请编号：'+chosen+' ｜ 企业：'+item.company_name;
+ $('review-status').value=item.status==='approved'?'approved':'reviewing';
+ $('review-note').value='';
+ for(const k of ['offer-amount','offer-rate','offer-months','offer-method'])$(k).value='';
+ updateOfferFields();
+ if(item.status==='approved'){
+  try{const t=(await api('/staff/terms/'+encodeURIComponent(chosen))).terms;
+    if(t){$('offer-amount').value=t.approved_amount;$('offer-rate').value=t.annual_interest_rate_pct;$('offer-months').value=t.term_months;$('offer-method').value=t.repayment_method}
+  }catch(err){toast('读取原审批条件失败：'+err.message)}
+ }
+ $('review-card').scrollIntoView({behavior:'smooth'});
+});
+function updateOfferFields(){const approved=$('review-status').value==='approved';$('approved-fields').hidden=!approved;
+ for(const name of ['offer-amount','offer-rate','offer-months','offer-method'])$(name).required=approved}
+$('review-status').addEventListener('change',updateOfferFields);
+$('cancel-review').addEventListener('click',()=>{$('review-card').hidden=true;chosen=null});
+$('save-review').addEventListener('click',async()=>{
+ if(!permitted||!chosen)return;
+ const status=$('review-status').value,note=$('review-note').value.trim();
+ if(['rejected','supplement_required'].includes(status)&&note.length<3)return toast('拒绝或补件必须填写至少3个字的原因');
+ const body={application_id:chosen,status,note};
+ if(status==='approved'){
+  const amount=Number($('offer-amount').value),apr=Number($('offer-rate').value),months=Number($('offer-months').value),method=$('offer-method').value;
+  if(!$('offer-amount').value||!$('offer-rate').value||!$('offer-months').value||!method ||
+   !Number.isFinite(amount)||amount<=0||amount>1e8||!Number.isFinite(apr)||apr<0||apr>36||!Number.isInteger(months)||months<1||months>360)
+     return toast('审批金额、年化利率、还款期数、还款方式必须填写正确');
+  Object.assign(body,{approved_amount:amount,annual_interest_rate_pct:apr,term_months:months,repayment_method:method});
+ }
+ const btn=$('save-review');btn.disabled=true;
+ try{await api('/staff/review','POST',body);toast('审核记录已保存，客户将收到站内消息');$('review-card').hidden=true;chosen=null;await loadApplications()}
+ catch(err){toast('保存失败：'+err.message)}finally{btn.disabled=false}
+});
+$('review-card').addEventListener('click',async ev=>{
+ const btn=ev.target.closest('button[data-document]');if(!btn||!permitted||!chosen)return;
+ try{
+  const result=await api('/staff/document-link','POST',{application_id:chosen,kind:btn.dataset.document});
+  const link=document.createElement('a');link.href=result.url;link.target='_blank';link.rel='noopener noreferrer';document.body.append(link);link.click();link.remove();
+  toast('已打开授权文件链接，有效期60秒')
+ }catch(err){toast('资料查看失败：'+err.message)}
+});
+setInterval(()=>{if(permitted&&document.visibilityState==='visible'&&$('review-card').hidden)void loadApplications()},60000);
+sb.auth.onAuthStateChange(()=>{ /* avoid synchronous token requests in auth callback */ });
+await enterAdmin();
+</script>
+</body></html>
