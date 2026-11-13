@@ -27,18 +27,86 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #bacde7;border-ra
 </main><footer>企业税票贷管理端 · 非公众申请入口 · 请妥善保管管理员登录凭证</footer><div id="toast" class="alert" role="status" aria-live="polite"></div>
 <script src="./supabase-2.119.0.js"></script>
 <script type="module">
-const BASE='https://qiye-shuipiao-dai.longzhenran.workers.dev';
+const BASE='https://verzesghsasjhpbozmgw.supabase.co';
+const PROXY='https://qiye-shuipiao-dai.longzhenran.workers.dev';
 const PUBLIC_KEY='sb_publishable_mEsqewvVT_kVKzdFaXyEwA_M17G4Dyy';
+let routePromise;
+let preferredOrigin = PROXY;
+
+async function probeOrigin(origin) {
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),5000);
+ try{
+  const throughProxy=origin===PROXY;
+  const response=await fetch(origin+(throughProxy?'/api/auth-health':'/auth/v1/health'),{
+   cache:'no-store',
+   signal:controller.signal,
+   headers:throughProxy?undefined:{apikey:PUBLIC_KEY},
+  });
+  return response.ok&&(!throughProxy||(await response.json()).authentication_upstream==='reachable');
+ }catch{return false}
+ finally{clearTimeout(timer)}
+}
+
+async function chooseOrigin() {
+ const first=preferredOrigin;
+ const second=first===PROXY?BASE:PROXY;
+ if(await probeOrigin(first))return first;
+ if(await probeOrigin(second))return second;
+ throw new TypeError('无法连接后台认证服务');
+}
+
+async function serviceFetch(input,options) {
+ const target=new URL(typeof input==='string'?input:input.url||input.href);
+ if(target.origin!==BASE)return fetch(input,options);
+ routePromise??=chooseOrigin();
+ const pending=routePromise;
+ let origin;
+ try{origin=await pending}
+ catch(error){
+  if(routePromise===pending)routePromise=undefined;
+  throw error;
+ }
+ const url=origin+target.pathname+target.search;
+ const controller=new AbortController();
+ const signal=options?.signal??(input instanceof Request?input.signal:undefined);
+ const abort=()=>controller.abort();
+ if(signal?.aborted)abort();
+ else signal?.addEventListener('abort',abort,{once:true});
+ const timer=setTimeout(abort,18000);
+ try{
+  const request=input instanceof Request?new Request(url,input):url;
+  const response=await fetch(request,{...options,signal:controller.signal});
+  if([502,503,504].includes(response.status)&&routePromise===pending){
+   preferredOrigin=origin===PROXY?BASE:PROXY;
+   routePromise=undefined;
+  }
+  return response;
+ }catch(error){
+  if(!signal?.aborted&&routePromise===pending){
+   preferredOrigin=origin===PROXY?BASE:PROXY;
+   routePromise=undefined;
+  }
+  throw error;
+ }finally{
+  clearTimeout(timer);
+  signal?.removeEventListener('abort',abort);
+ }
+}
+
 // Separate login session from the customer site, even on the same hosting origin.
-const sb=window.supabase.createClient(BASE,PUBLIC_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'qiye-admin-private-session-v1'}});
+const sb=window.supabase.createClient(BASE,PUBLIC_KEY,{
+ global:{fetch:serviceFetch},
+ auth:{persistSession:true,autoRefreshToken:true,storageKey:'qiye-admin-private-session-v1'},
+});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={pending:'待审核',reviewing:'审核中',approved:'审核通过',rejected:'审核不通过',supplement_required:'待补充材料'};
 let permitted=false,chosen=null,applications=[],messageTimer,verifyingAdmin=false;
 function authErrorMessage(error){
  const code=String(error?.code||''),status=Number(error?.status||0);
- if(error instanceof TypeError||error?.name==='AuthRetryableFetchError')return '当前网络无法连接后台服务，请稍后重试。';
- if(code==='invalid_credentials')return '邮箱或密码不正确，请核对后重试。';
+ if(error instanceof TypeError||error?.name==='AuthRetryableFetchError')return '当前网络暂时无法连接后台认证服务，请稍后再试。';
+ if(code==='invalid_credentials'||error?.message==='Invalid login credentials')return '邮箱或密码不正确，请核对后重试。';
  if(code==='email_not_confirmed')return '管理员邮箱尚未完成验证，请先完成邮箱验证。';
  if(status===429||code.includes('rate_limit'))return '登录请求过于频繁，Supabase暂时限制登录，请稍后再试；无需反复点击。';
  if(code==='refresh_token_not_found'||code==='refresh_token_already_used')return '登录会话已失效，请重新输入管理员邮箱和密码。';
@@ -53,7 +121,7 @@ function toast(message){const el=$('toast');el.textContent=message;el.style.disp
 function authView(ok){permitted=ok;$('login-view').hidden=ok;$('dashboard').hidden=!ok;$('signout').hidden=!ok;if(ok)retryVisibility(false);if(!ok){$('review-card').hidden=true;$('signed-name').textContent='';chosen=null;applications=[]}}
 async function api(path,method='GET',body){
  const {data:{session}}=await sb.auth.getSession();if(!session)throw Error('请先登录管理员账号');
- const response=await fetch(BASE+'/functions/v1/qiye-api'+path,{method,headers:{Authorization:'Bearer '+session.access_token,apikey:PUBLIC_KEY,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});
+ const response=await serviceFetch(BASE+'/functions/v1/qiye-api'+path,{method,headers:{Authorization:'Bearer '+session.access_token,apikey:PUBLIC_KEY,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});
  const data=await response.json().catch(()=>({error:'服务器响应异常'}));
  if(!response.ok)throw Error(data.error||'网络请求失败');return data;
 }
@@ -90,24 +158,16 @@ $('retry-session').addEventListener('click',async()=>{
 });
 $('login-form').addEventListener('submit',async ev=>{
  ev.preventDefault();
- const btn=$('login-button');if(btn.disabled||verifyingAdmin)return;btn.disabled=true;
+ const btn=$('login-button');if(btn.disabled||verifyingAdmin)return;btn.disabled=true;btn.textContent='正在登录…';
  try{
   retryVisibility(false);
   const email=$('email').value.trim();
-  // If a session is already present, verify it instead of repeatedly submitting passwords.
-  const {data:{session},error:sessionError}=await sb.auth.getSession();
-  if(sessionError)throw sessionError;
-  if(session&&session.user?.email?.toLowerCase()===email.toLowerCase()){
-    const ok=await enterAdmin();
-    if(ok){$('password').value='';toast('已进入独立审核管理后台')}
-    return;
-  }
   const {error}=await sb.auth.signInWithPassword({email,password:$('password').value});
   if(error)throw error;
   const ok=await enterAdmin();
   if(ok){$('password').value='';toast('已进入独立审核管理后台')}
  }catch(err){toast('登录未完成：'+authErrorMessage(err))}
- finally{btn.disabled=false}
+ finally{btn.disabled=false;btn.textContent='登录管理后台'}
 });
 $('signout').addEventListener('click',async()=>{
  const btn=$('signout');if(btn.disabled)return;btn.disabled=true;
