@@ -17,7 +17,7 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #bacde7;border-ra
 <header><div class="top"><div><div class="logo">企业税票贷 · 管理后台</div><div class="sub">独立管理员登录 · 与客户网站共享同一数据库</div></div><div class="flex"><span id="signed-name" class="muted"></span><button id="signout" class="secondary" type="button" hidden>退出后台</button></div></div></header>
 <main>
 <section id="login-view" class="center"><div class="card"><h2>管理员专属登录</h2><p class="muted">仅数据库授权的唯一管理员账号能够查看客户申请和审核资料。客户账号无法访问。</p>
-<form id="login-form"><div class="field"><label for="email">管理员邮箱</label><input id="email" type="email" required autocomplete="username"></div><div class="field"><label for="password">登录密码</label><input id="password" type="password" required autocomplete="current-password"></div><button id="login-button" type="submit">登录管理后台</button></form>
+<form id="login-form"><div class="field"><label for="email">管理员邮箱</label><input id="email" type="email" required autocomplete="username"></div><div class="field"><label for="password">登录密码</label><input id="password" type="password" required autocomplete="current-password"></div><button id="login-button" type="submit" disabled>登录管理后台</button></form>
 <p class="muted">本后台不开放公开注册。忘记密码时使用原管理员账号的密码恢复流程。</p><p id="login-help" class="muted" role="status" hidden></p><button id="retry-session" type="button" class="secondary" hidden>重试管理员身份验证（无需重新登录）</button></div></section>
 <section id="dashboard" hidden><div class="card"><div class="flex" style="justify-content:space-between"><div><h2>客户融资申请</h2><p class="muted">由客户网站自动传入，无需导入。列表只显示脱敏个人信息。</p></div><button type="button" id="refresh">刷新申请列表</button></div><div id="counter" class="notice">正在加载客户申请…</div><div id="applications" aria-live="polite"></div></div>
 <div class="card" id="review-card" hidden><h2>审核客户申请</h2><p class="muted" id="application-id"></p><div class="grid"><div class="field"><label for="review-status">审核结果</label><select id="review-status"><option value="reviewing">审核中</option><option value="supplement_required">需要补充材料</option><option value="rejected">审核不通过</option><option value="approved">人工审核通过</option></select></div><div class="field"><label for="review-note">审核备注</label><textarea id="review-note" maxlength="1000" placeholder="拒绝或补件时请说明原因；修改审批条件时请注明原因"></textarea></div></div>
@@ -25,18 +25,19 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #bacde7;border-ra
 <div class="flex"><button id="save-review" type="button">保存审核结果并发送站内消息</button><button id="cancel-review" class="secondary" type="button">关闭</button></div>
 <h3>授权查看客户上传的材料</h3><p class="muted">每次查看由后端验证权限，文件链接有效期60秒，访问动作记录日志。</p><div class="flex"><button type="button" class="secondary" data-document="id-front">身份证正面</button><button type="button" class="secondary" data-document="id-back">身份证反面</button><button type="button" class="secondary" data-document="business-license">营业执照</button></div></div></section>
 </main><footer>企业税票贷管理端 · 非公众申请入口 · 请妥善保管管理员登录凭证</footer><div id="toast" class="alert" role="status" aria-live="polite"></div>
+<script src="./supabase-2.119.0.js"></script>
 <script type="module">
-import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
-const BASE='https://verzesghsasjhpbozmgw.supabase.co';
+const BASE='https://qiye-shuipiao-dai.longzhenran.workers.dev';
 const PUBLIC_KEY='sb_publishable_mEsqewvVT_kVKzdFaXyEwA_M17G4Dyy';
 // Separate login session from the customer site, even on the same hosting origin.
-const sb=createClient(BASE,PUBLIC_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'qiye-admin-private-session-v1'}});
+const sb=window.supabase.createClient(BASE,PUBLIC_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'qiye-admin-private-session-v1'}});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={pending:'待审核',reviewing:'审核中',approved:'审核通过',rejected:'审核不通过',supplement_required:'待补充材料'};
 let permitted=false,chosen=null,applications=[],messageTimer,verifyingAdmin=false;
 function authErrorMessage(error){
  const code=String(error?.code||''),status=Number(error?.status||0);
+ if(error instanceof TypeError||error?.name==='AuthRetryableFetchError')return '当前网络无法连接后台服务，请稍后重试。';
  if(code==='invalid_credentials')return '邮箱或密码不正确，请核对后重试。';
  if(code==='email_not_confirmed')return '管理员邮箱尚未完成验证，请先完成邮箱验证。';
  if(status===429||code.includes('rate_limit'))return '登录请求过于频繁，Supabase暂时限制登录，请稍后再试；无需反复点击。';
@@ -181,6 +182,6 @@ $('review-card').addEventListener('click',async ev=>{
 });
 setInterval(()=>{if(permitted&&document.visibilityState==='visible'&&$('review-card').hidden)void loadApplications()},60000);
 sb.auth.onAuthStateChange(()=>{ /* avoid synchronous token requests in auth callback */ });
-await enterAdmin();
+try{await enterAdmin()}finally{$('login-button').disabled=false}
 </script>
 </body></html>
